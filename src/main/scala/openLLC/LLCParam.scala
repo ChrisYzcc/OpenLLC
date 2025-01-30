@@ -24,7 +24,7 @@ import org.chipsalliance.cde.config.{Field, Parameters}
 import coupledL2.L2Param
 import huancun.CacheParameters
 
-case class ResourceConfig(refill: Int, response: Int, snoop: Int, memory: Int)
+case class ResourceConfig(refill: Int, response: Int, snoop: Int, memory: Int, prefetch: Int)
 
 case class OpenLLCParam
 (
@@ -33,7 +33,7 @@ case class OpenLLCParam
   sets: Int = 128,
   blockBytes: Int = 64,
   beatBytes: Int = 32,
-  mshrs: ResourceConfig = ResourceConfig(16, 16, 16, 16),
+  mshrs: ResourceConfig = ResourceConfig(16, 16, 16, 16, 16),
   fullAddressBits: Int = 16,
   replacement: String = "plru",
   clientCaches: Seq[L2Param] = Nil,

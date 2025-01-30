@@ -65,6 +65,7 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   val memUnit = Module(new MemUnit())
   val responseUnit = Module(new ResponseUnit())
   val snpUnit = Module(new SnoopUnit())
+  val prefetchUnit = Module(new PrefetchUnit())
   
   /* Connect upwards channels */
   rxreqUp.io.req <> rxUp.req
@@ -135,6 +136,13 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   snpUnit.io.in <> mainPipe.io.snoopTask_s4
   snpUnit.io.respInfo <> responseUnit.io.respInfo
   snpUnit.io.ack <> rxrspUp.io.out
+
+  prefetchUnit.io.toRespUnit <> responseUnit.io.fromPrefetchUnit
+  prefetchUnit.io.snRxdat <> rxdatDown.io.out
+  prefetchUnit.io.fromMainPipe <> mainPipe.io.toPrefetchUnit
+  prefetchUnit.io.query_req <> mainPipe.io.query_pfUnit_s2
+  prefetchUnit.io.query_rsp <> mainPipe.io.resp_pfUnit_s3
+  prefetchUnit.io.bypassData <> memUnit.io.bypassData
 
   io.snpMask := txsnpUp.io.snpMask
 

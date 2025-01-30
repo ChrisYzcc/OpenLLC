@@ -29,11 +29,17 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
     /* receive incoming task from arbiter at stage 2 */
     val taskFromArb_s2 = Flipped(ValidIO(new Task()))
 
+    /* query prefetch buffer at stage 2 */
+    val query_pfUnit_s2 = ValidIO(new PrefetchQuery)
+
     /* get meta at stage 3 */
     val dirResp_s3 = Input(new DirResult())
 
     /* update self/client directory at stage 3 */
     val dirWReq_s3 = new DirWriteIO()
+
+    /* get prefetch buffer query result at stage 3 */
+    val resp_pfUnit_s3 = Flipped(ValidIO(new PrefetchQueryResult()))
 
     /* get refill data at stage 4 */
     val refillBufResp_s4 = Input(new DSBlock())
@@ -43,6 +49,11 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
 
     /* send Snoop request via upstream TXSNP channel */
     val snoopTask_s4 = ValidIO(new Task())
+
+    /* send PrefetchTgt task to PrefetchUnit */
+    val toPrefetchUnit = new Bundle() {
+      val alloc_s4 = ValidIO(new PrefetchRequest())
+    }
 
     /* send ReadNoSnp/WriteNoSnp task to MemUnit */
     val toMemUnit = new Bundle() {
@@ -72,6 +83,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val refill_s4 = io.refillReq_s4
   val mem_s4    = io.toMemUnit.alloc_s4
   val comp_s4   = io.toResponseUnit.alloc_s4
+  val pf_s4     = io.toPrefetchUnit.alloc_s4
   val mem_s6    = io.toMemUnit.alloc_s6
   val comp_s6   = io.toResponseUnit.alloc_s6
 
@@ -87,6 +99,14 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   pipeInfo.s2_set := task_s2.bits.set
   pipeInfo.s2_reqID := task_s2.bits.reqID
 
+  val query_pfUnit_s2 = io.query_pfUnit_s2
+  query_pfUnit_s2.valid     := task_s2.valid
+  query_pfUnit_s2.bits.set  := task_s2.bits.set
+  query_pfUnit_s2.bits.tag  := task_s2.bits.tag
+  query_pfUnit_s2.bits.task := task_s2.bits
+  query_pfUnit_s2.bits.task.txnID := task_s2.bits.reqID
+  query_pfUnit_s2.bits.task.homeNID := task_s2.bits.tgtID
+
   /* Stage 3 */
   val task_s3 = RegInit(0.U.asTypeOf(Valid(new Task())))
   task_s3.valid := task_s2.valid
@@ -98,6 +118,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val clientsDirResp_s3 = io.dirResp_s3.clients
   val self_meta_s3      = selfDirResp_s3.meta
   val clients_meta_s3   = clientsDirResp_s3.meta
+  val pf_query_res      = io.resp_pfUnit_s3
 
   val req_s3         = task_s3.bits
   val opcode_s3      = req_s3.chiOpcode
@@ -112,6 +133,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val peerRNs_hit_s3    = Cat(clients_meta_s3.zipWithIndex.map { case (meta, i) =>
     Mux(i.U =/= srcID_s3, clients_meta_s3(i).valid, false.B) 
   }).orR && clients_hit_s3
+  val pfBuf_hit_s3      = pf_query_res.bits.hit
 
   if (inclusion == "Exclusive") {
     assert(!(self_hit_s3 && clients_hit_s3), "Non-exclusive?")
@@ -127,10 +149,11 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val cleanShared_s3        = !refill_task_s3 && opcode_s3 === CleanShared
   val writeCleanFull_s3     = !refill_task_s3 && opcode_s3 === WriteCleanFull
   val writeEvictOrEvict_s3  = !refill_task_s3 && onIssueEbOrElse(opcode_s3 === WriteEvictOrEvict, false.B)
+  val prefetchTgt_s3        = !refill_task_s3 && opcode_s3 === PrefetchTgt
 
   assert(!task_s3.valid || refill_task_s3 ||
     readNotSharedDirty_s3 || readUnique_s3 || makeUnique_s3 || writeBackFull_s3 || evict_s3 || makeInvalid_s3 ||
-    cleanInvalid_s3 || cleanShared_s3 || writeCleanFull_s3 || writeEvictOrEvict_s3, "Unsupported opcode")
+    cleanInvalid_s3 || cleanShared_s3 || writeCleanFull_s3 || writeEvictOrEvict_s3 || prefetchTgt_s3, "Unsupported opcode")
 
   /**
     * Requests have different coherence states after processing
@@ -260,6 +283,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val cleanShared_s4        = RegNext(cleanShared_s3, false.B)
   val writeCleanFull_s4     = RegNext(writeCleanFull_s3, false.B)
   val writeEvictOrEvict_s4  = RegNext(writeEvictOrEvict_s3, false.B)
+  val prefetchTgt_s4        = RegNext(prefetchTgt_s3, false.B)
 
   val sharedReq_s4          = RegNext(sharedReq_s3, false.B)
   val exclusiveReq_s4       = RegNext(exclusiveReq_s3, false.B)
@@ -267,6 +291,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val invalidReq_s4         = RegNext(invalidReq_s3, false.B)
   val cleanReq_s4           = RegNext(cleanReq_s3, false.B)
   val peerRNs_hit_s4        = RegNext(peerRNs_hit_s3, false.B)
+  val pfBuf_hit_s4          = RegNext(pfBuf_hit_s3, false.B)
 
   val req_s4          = task_s4.bits
   val refill_task_s4  = req_s4.refillTask
@@ -411,6 +436,17 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   comp_s4.bits.task := comp_task_s4
   comp_s4.bits.is_miss := !self_hit_s4
 
+  /** Prefetch Request to PrefetchUnit **/
+  val pf_task_s4 = WireInit(req_s4)
+  pf_task_s4.tgtID    := srcID_s4
+  pf_task_s4.homeNID  := req_s4.tgtID
+  pf_task_s4.dbID     := req_s4.reqID
+
+  pf_s4.valid := task_s4.valid && prefetchTgt_s4 && !self_hit_s4 && !clients_hit_s4 && !pfBuf_hit_s4
+  pf_s4.bits.state.w_queryReq := false.B
+  pf_s4.bits.state.w_datRsp   := false.B
+  pf_s4.bits.task             := pf_task_s4
+
   /**  Read/Write request to MemUnit **/
   val mem_task_s4 = WireInit(req_s4)
   mem_task_s4.tag := Mux(refill_task_s4, selfDirResp_s4.tag, req_s4.tag)
@@ -426,7 +462,8 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   mem_task_s4.expCompAck := false.B
 
   // need ReadNoSnp/WriteNoSnp downwards
-  val memRead_s4 = (readNotSharedDirty_s4 || readUnique_s4) && !self_hit_s4 && !peerRNs_hit_s4
+  val pf_need_mem = prefetchTgt_s4 && !self_hit_s4 && !clients_hit_s4 && !pfBuf_hit_s4  // TODO: add snoop to support multicore prefetch
+  val memRead_s4 = (readNotSharedDirty_s4 || readUnique_s4) && !self_hit_s4 && !peerRNs_hit_s4 || pf_need_mem
   val memWrite_s4 = cleanReq_s4 && unique_peerRN_s4 || writeCleanFull_s4
   mem_s4.valid := task_s4.valid && (memRead_s4 || memWrite_s4)
   mem_s4.bits.state.s_issueReq := false.B

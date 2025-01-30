@@ -84,6 +84,9 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes 
 
     /* instruct MemUnit to immediately send a read request */
     val urgentRead = DecoupledIO(new Task())
+
+    /* data from PrefetchUnit */
+    val fromPrefetchUnit = Flipped(Vec(beatSize, ValidIO(new RespWithData())))
   })
 
   val alloc_s6   = io.fromMainPipe.alloc_s6
@@ -95,6 +98,7 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes 
   val txrsp      = io.txrsp
   val txdat      = io.txdat
   val urgentRead = io.urgentRead
+  val pfData     = io.fromPrefetchUnit
 
   /* Data Structure */
   val buffer = RegInit(VecInit(Seq.fill(mshrs.response)(0.U.asTypeOf(new ResponseEntry()))))
@@ -128,7 +132,6 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes 
     entry.data := alloc_s6.bits.data.get
     entry.beatValids := VecInit(Seq.fill(beatSize)(true.B))
     entry.is_miss := alloc_s6.bits.is_miss
-    entry.task.rsvdc_d := Mux(alloc_s6.bits.is_miss, DAT_RSVDC_IS_OFFCHIP, 0.U)
   }
 
   when(canAlloc_s4) {
@@ -138,7 +141,6 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes 
     entry.task := alloc_s4.bits.task
     entry.beatValids := VecInit(Seq.fill(beatSize)(false.B))
     entry.is_miss := alloc_s4.bits.is_miss
-    entry.task.rsvdc_d := Mux(alloc_s4.bits.is_miss, DAT_RSVDC_IS_OFFCHIP, 0.U)
   }
 
   assert(!(full_s6 && alloc_s6.valid || full_s4 && alloc_s4.valid) , "ResponseBuf overflow")
@@ -269,6 +271,7 @@ class ResponseUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes 
   handleCompAck(io.rnRxrsp)
   for (i <- 0 until beatSize) {
     handleMemResp(bypassData(i), isBypass = true)
+    handleMemResp(pfData(i), isBypass = true)
   }
 
   /* Issue */
