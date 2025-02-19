@@ -23,6 +23,7 @@ import freechips.rocketchip.amba.axi4._
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2chi.{DecoupledPortIO, DecoupledNoSnpPortIO}
+import utility.{XSPerfAccumulate}
 
 class Slice()(implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {
@@ -148,4 +149,6 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   io.l3Miss := Cat(responseUnit.io.respInfo.map { r =>
     r.valid && r.bits.is_miss
   }).orR
+
+  XSPerfAccumulate("openllc_rsvdc", txUp.dat.fire && txUp.dat.bits.rsvdc === DAT_RSVDC_OFFCHIP)
 }
