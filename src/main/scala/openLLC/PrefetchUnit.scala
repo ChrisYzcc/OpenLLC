@@ -75,7 +75,7 @@ class PrefetchUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes{
 
   /* Query */
   val hit_vec_s2 = buffer.map(e =>
-    e.task.tag === query_req.bits.tag && e.task.set === query_req.bits.set && query_req.valid
+    e.valid && e.task.tag === query_req.bits.tag && e.task.set === query_req.bits.set && query_req.valid
   )
   assert(PopCount(hit_vec_s2) < 2.U, "Prefetch Task repeated")
   val hit_s2      = Cat(hit_vec_s2).orR
@@ -116,7 +116,7 @@ class PrefetchUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes{
   def handleMemResp(response: Valid[RespWithData], isBypass: Boolean): Unit = {
     when(response.valid) {
       val update_vec = buffer.map(e =>
-        e.task.reqID === response.bits.txnID && e.valid && response.bits.opcode === CompData
+        e.task.reqID === response.bits.txnID && e.valid && response.bits.opcode === CompData && !e.state.w_datRsp
       )
       assert(PopCount(update_vec) < 2.U, "Response task repeated")
       val canUpdate = Cat(update_vec).orR
@@ -174,4 +174,14 @@ class PrefetchUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes{
     }
   }
 
+
+  /* Performance Counter */
+  if (cacheParams.enablePerf) {
+    val bufferTimer = RegInit(VecInit(Seq.fill(mshrs.prefetch)(0.U(16.W))))
+    buffer.zip(bufferTimer).zipWithIndex.map { case ((e, t), i) =>
+      when(e.valid && !e.state.w_datRsp) { t := t + 1.U }
+      when(RegNext(e.valid && !e.state.w_datRsp, false.B) && !(e.valid && !e.state.w_datRsp)) { t := 0.U }
+      assert(t < timeoutThreshold.U, "PrefetchBuf Leak(id: %d)", i.U)
+    }
+  }
 }

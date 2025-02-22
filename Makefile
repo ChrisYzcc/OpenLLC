@@ -15,6 +15,9 @@ test-top-l2l3:
 test-top-l2l3l2:
 	mill -i OpenLLC.test.runMain openLLC.TestTopSoC_DualCore -td build
 
+test-top-l3ram:
+	mill -i OpenLLC.test.runMain openLLC.TestTopL3Ram -td build
+
 clean:
 	rm -rf ./build
 

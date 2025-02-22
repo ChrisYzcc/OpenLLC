@@ -463,7 +463,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
 
   // need ReadNoSnp/WriteNoSnp downwards
   val pf_need_mem = prefetchTgt_s4 && !self_hit_s4 && !clients_hit_s4 && !pfBuf_hit_s4  // TODO: add snoop to support multicore prefetch
-  val memRead_s4 = (readNotSharedDirty_s4 || readUnique_s4) && !self_hit_s4 && !peerRNs_hit_s4 || pf_need_mem
+  val memRead_s4 = (readNotSharedDirty_s4 || readUnique_s4) && !self_hit_s4 && !peerRNs_hit_s4 && !pfBuf_hit_s4 || pf_need_mem
   val memWrite_s4 = cleanReq_s4 && unique_peerRN_s4 || writeCleanFull_s4
   mem_s4.valid := task_s4.valid && (memRead_s4 || memWrite_s4)
   mem_s4.bits.state.s_issueReq := false.B

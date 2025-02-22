@@ -300,3 +300,77 @@ object TestTopSoC_DualCore extends App {
     banks = 1
   )(p))(args)
 }
+
+
+/*
+*       l3
+*        |
+*       Ram
+* */
+class TestTopL3Ram()(implicit p: Parameters) extends LazyModule with HasCHIMsgParameters {
+  override lazy val desiredName: String = "TestTop_L3"
+  val delayFactor = 0.5
+  val l2Params = p(L2ParamKey)
+  val l3Params = p(OpenLLCParamKey)
+
+  val l3Bridge = LazyModule(new OpenNCB()(new Config((site, here, up) => {
+    case CHIIssue => issue
+    case NCBParametersKey => new NCBParameters(
+      axiMasterOrder      = EnumAXIMasterOrder.WriteAddress,
+      readCompDMT         = false,
+      writeCancelable     = false,
+      writeNoError        = true,
+      axiBurstAlwaysIncr  = true
+    )
+  })))
+
+  val ram = LazyModule(new AXI4RAM(AddressSet(0, 0xff_ffffL), beatBytes = 32))
+  ram.node :=
+    AXI4Xbar() :=
+    AXI4Fragmenter() :=
+    l3Bridge.axi4node
+
+  lazy val module = new LazyModuleImp(this){
+    val io = IO(new Bundle {
+      val rn = Flipped(new PortIO)
+      val nodeID = Input(UInt(NODEID_WIDTH.W))
+    })
+    val l3 = Module(new OpenLLC()(new Config((site, here, up) => {
+      case CHIIssue => issue
+      case OpenLLCParamKey => l3Params.copy(
+        fullAddressBits = ADDR_WIDTH,
+        banks = 4,
+        ways = 16,
+        sets = 4096
+      )
+      case LogUtilsOptionsKey => LogUtilsOptions(
+        false,
+        here(OpenLLCParamKey).enablePerf,
+        here(OpenLLCParamKey).FPGAPlatform
+      )
+      case PerfCounterOptionsKey => PerfCounterOptions(
+        here(OpenLLCParamKey).enablePerf && !here(OpenLLCParamKey).FPGAPlatform,
+        false,
+        0
+      )
+    })))
+    l3.io.nodeID := io.nodeID
+    l3.io.rn.head <> io.rn
+    l3.io.sn <> l3Bridge.module.io.chi
+  }
+}
+
+object TestTopL3Ram extends App {
+  val config = new Config((_, _, _) => {
+    case OpenLLCParamKey => OpenLLCParam(
+      clientCaches = (0 until 1).map(i =>
+        L2Param()
+      )
+    )
+  })
+
+  val top = DisableMonitors(p => LazyModule(new TestTopL3Ram()(p)))(config)
+  (new ChiselStage).execute(args, Seq(
+    ChiselGeneratorAnnotation(() => top.module)
+  ))
+}
