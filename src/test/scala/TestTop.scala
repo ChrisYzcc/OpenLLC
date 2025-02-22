@@ -123,7 +123,8 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
       readCompDMT         = false,
       writeCancelable     = false,
       writeNoError        = true,
-      axiBurstAlwaysIncr  = true
+      axiBurstAlwaysIncr  = true,
+      chiDataCheck        = EnumCHIDataCheck.OddParity
     )
   })))
 
@@ -220,6 +221,7 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
       dontTouch(l2.module.io)
 
       l2.module.io.hartId := i.U
+      l2.module.io.pfCtrlFromCore := DontCare
       l2.module.io_nodeID := i.U(NODEID_WIDTH.W)
       l2.module.io.debugTopDown := DontCare
       l2.module.io.l2_tlb_req <> DontCare

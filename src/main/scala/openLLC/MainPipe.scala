@@ -148,7 +148,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val cleanInvalid_s3       = !refill_task_s3 && opcode_s3 === CleanInvalid
   val cleanShared_s3        = !refill_task_s3 && opcode_s3 === CleanShared
   val writeCleanFull_s3     = !refill_task_s3 && opcode_s3 === WriteCleanFull
-  val writeEvictOrEvict_s3  = !refill_task_s3 && onIssueEbOrElse(opcode_s3 === WriteEvictOrEvict, false.B)
+  val writeEvictOrEvict_s3  = !refill_task_s3 && afterIssueEbOrElse(opcode_s3 === WriteEvictOrEvict, false.B)
   val prefetchTgt_s3        = !refill_task_s3 && opcode_s3 === PrefetchTgt
 
   assert(!task_s3.valid || refill_task_s3 ||
@@ -398,6 +398,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   refill_s4.bits.task.replSnp := replace_snoop_s4
   refill_s4.bits.dirResult.self := selfDirResp_s4
   refill_s4.bits.dirResult.clients := clientsDirResp_s4
+  refill_s4.bits.isWrite := writeBackFull_s4 || writeEvictOrEvict_s4
 
   /** Comp task to ResponseUnit **/
   val respSC_s4 = sharedReq_s4
