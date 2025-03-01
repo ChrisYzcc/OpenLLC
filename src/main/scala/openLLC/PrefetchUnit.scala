@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.util._
 import coupledL2.tl2chi._
 import org.chipsalliance.cde.config.Parameters
-import utility.FastArbiter
+import utility.{FastArbiter, XSPerfAccumulate}
 
 class PrefetchState(implicit  p: Parameters) extends LLCBundle{
   val w_datRsp = Bool()     // wait for rsp from memory
@@ -181,7 +181,10 @@ class PrefetchUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes{
     buffer.zip(bufferTimer).zipWithIndex.map { case ((e, t), i) =>
       when(e.valid && !e.state.w_datRsp) { t := t + 1.U }
       when(RegNext(e.valid && !e.state.w_datRsp, false.B) && !(e.valid && !e.state.w_datRsp)) { t := 0.U }
-      assert(t < timeoutThreshold.U, "PrefetchBuf Leak(id: %d)", i.U)
+      when(t > timeoutThreshold.U) {
+        buffer(i).valid := false.B
+      }
+      XSPerfAccumulate(s"PrefetchBufTimeout$i", t >= timeoutThreshold.U)
     }
   }
 }
