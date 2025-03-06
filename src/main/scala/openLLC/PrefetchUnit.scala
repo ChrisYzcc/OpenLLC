@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.util._
 import coupledL2.tl2chi._
 import org.chipsalliance.cde.config.Parameters
-import utility.FastArbiter
+import utility.{FastArbiter, XSPerfAccumulate}
 
 class PrefetchState(implicit  p: Parameters) extends LLCBundle{
   val w_datRsp = Bool()     // wait for rsp from memory
@@ -85,7 +85,7 @@ class PrefetchUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes{
   val hit_id_s3     = RegNext(hit_id_s2, false.B)
   val query_req_s3  = RegNext(query_req, 0.U.asTypeOf(query_req))
 
-  when(hit_s3) {
+  when(hit_s3 && (query_req_s3.bits.task.chiOpcode === ReadNotSharedDirty || query_req_s3.bits.task.chiOpcode === ReadUnique)) {
     buffer(hit_id_s3).state.w_queryReq := true.B
     buffer(hit_id_s3).query_task  := query_req_s3.bits.task
   }
@@ -110,7 +110,8 @@ class PrefetchUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes{
   }
 
   // TODO: add PLRU for reallocate the buffer entry
-  assert(!(full_s4 && alloc_s4.valid), "PrefetchBuf overflow")
+  XSPerfAccumulate(s"${this.name}OverFlow", full_s4 && alloc_s4.valid)
+  //assert(!(full_s4 && alloc_s4.valid), "PrefetchBuf overflow")
 
   /* Update State */
   def handleMemResp(response: Valid[RespWithData], isBypass: Boolean): Unit = {
@@ -165,13 +166,28 @@ class PrefetchUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes{
   }
 
   /* Dealloc */
-  val will_free_vec = buffer.map(e =>
-    e.valid && e.state.w_datRsp && e.state.w_queryReq
-  )
+  val will_free_vec = buffer.zipWithIndex.map{
+    case (e, i) =>
+      e.valid && e.state.w_datRsp && e.state.w_queryReq && txdatArb.io.in(i).fire
+  }
   for (i <- 0 until mshrs.prefetch) {
     when(will_free_vec(i)) {
       buffer(i).valid := false.B
     }
+  }
+
+  val waitTaskTimer = RegInit(VecInit(Seq.fill(mshrs.prefetch)(0.U(16.W))))
+  buffer.zip(waitTaskTimer).zipWithIndex.map { case((e, t), i)  =>
+    when (e.valid && e.state.w_datRsp && !e.state.w_datRsp){
+      t := t + 1.U
+    }
+    when (RegNext(e.valid && e.state.w_datRsp && !e.state.w_datRsp, false.B) && !(e.valid && e.state.w_datRsp && !e.state.w_datRsp)){
+      t := 0.U
+    }
+    when (t > timeoutThreshold.U){
+      e.valid := false.B
+    }
+    XSPerfAccumulate(s"noTask$i", t > timeoutThreshold.U)
   }
 
 
