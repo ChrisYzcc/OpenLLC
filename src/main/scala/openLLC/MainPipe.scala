@@ -53,6 +53,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
     /* send PrefetchTgt task to PrefetchUnit */
     val toPrefetchUnit = new Bundle() {
       val alloc_s4 = ValidIO(new PrefetchRequest())
+      val dealloc_s4 = ValidIO(new RefillRequest())
     }
 
     /* send ReadNoSnp/WriteNoSnp task to MemUnit */
@@ -86,6 +87,8 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val pf_s4     = io.toPrefetchUnit.alloc_s4
   val mem_s6    = io.toMemUnit.alloc_s6
   val comp_s6   = io.toResponseUnit.alloc_s6
+
+  val pf_cancel_s4 = io.toPrefetchUnit.dealloc_s4
 
   val refillData_s4 = io.refillBufResp_s4
   val rdata_s6      = io.rdataFromDS_s6
@@ -447,6 +450,9 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   pf_s4.bits.state.w_queryReq := false.B
   pf_s4.bits.state.w_datRsp   := false.B
   pf_s4.bits.task             := pf_task_s4
+
+  pf_cancel_s4.valid  := refill_s4.valid
+  pf_cancel_s4.bits   := refill_s4.bits
 
   /**  Read/Write request to MemUnit **/
   val mem_task_s4 = WireInit(req_s4)

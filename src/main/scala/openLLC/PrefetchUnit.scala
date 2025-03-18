@@ -43,6 +43,7 @@ class PrefetchUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes{
     /* PrefetchTgt from MainPipe */
     val fromMainPipe = new Bundle(){
       val alloc_s4 = Flipped(ValidIO(new PrefetchRequest()))
+      val dealloc_s4 = Flipped(ValidIO(new RefillRequest()))
     }
 
     /* Response from downstream memory */
@@ -63,6 +64,7 @@ class PrefetchUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes{
   })
 
   val alloc_s4    = io.fromMainPipe.alloc_s4
+  val dealloc_s4  = io.fromMainPipe.dealloc_s4
   val memData     = io.snRxdat
   val bypassData  = io.bypassData
   val query_req   = io.query_req
@@ -94,6 +96,8 @@ class PrefetchUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes{
   query_rsp.bits.hit := hit_s3
 
   /* Alloc */
+  assert(!(alloc_s4.valid && dealloc_s4.valid), "alloc and dealloc shouldn't be valid at the same time")
+
   val freeVec_s4 = VecInit(buffer.map(!_.valid))
   val idOH_s4 = PriorityEncoderOH(freeVec_s4)
   val insertIdx_s4 = OHToUInt(idOH_s4)
@@ -111,7 +115,18 @@ class PrefetchUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes{
 
   // TODO: add PLRU for reallocate the buffer entry
   XSPerfAccumulate(s"${this.name}OverFlow", full_s4 && alloc_s4.valid)
-  //assert(!(full_s4 && alloc_s4.valid), "PrefetchBuf overflow")
+
+  /* Dealloc */
+  val dealloc_hit_vec = buffer.map(e =>
+    e.valid && e.task.tag === dealloc_s4.bits.task.tag && e.task.set === dealloc_s4.bits.task.set && dealloc_s4.valid
+  )
+  assert(PopCount(dealloc_hit_vec) < 2.U, "cancel repeated task")
+  val dealloc_hit = Cat(dealloc_hit_vec).orR
+  val dealloc_idx = OHToUInt(PriorityEncoderOH(dealloc_hit_vec))
+
+  when (dealloc_hit && dealloc_s4.valid){
+    buffer(dealloc_idx).valid := false.B
+  }
 
   /* Update State */
   def handleMemResp(response: Valid[RespWithData], isBypass: Boolean): Unit = {
@@ -178,7 +193,7 @@ class PrefetchUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes{
 
   val waitTaskTimer = RegInit(VecInit(Seq.fill(mshrs.prefetch)(0.U(16.W))))
   buffer.zip(waitTaskTimer).zipWithIndex.map { case((e, t), i)  =>
-    when (e.valid && e.state.w_datRsp && !e.state.w_datRsp){
+    when (e.valid && e.state.w_datRsp && !e.state.w_queryReq){
       t := t + 1.U
     }
     when (RegNext(e.valid && e.state.w_datRsp && !e.state.w_datRsp, false.B) && !(e.valid && e.state.w_datRsp && !e.state.w_datRsp)){
