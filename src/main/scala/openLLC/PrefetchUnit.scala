@@ -196,7 +196,7 @@ class PrefetchUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes{
     when (e.valid && e.state.w_datRsp && !e.state.w_queryReq){
       t := t + 1.U
     }
-    when (RegNext(e.valid && e.state.w_datRsp && !e.state.w_datRsp, false.B) && !(e.valid && e.state.w_datRsp && !e.state.w_datRsp)){
+    when (RegNext(e.valid && e.state.w_datRsp && !e.state.w_queryReq, false.B) && !(e.valid && e.state.w_datRsp && !e.state.w_queryReq)){
       t := 0.U
     }
     when (t > timeoutThreshold.U){
