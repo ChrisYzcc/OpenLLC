@@ -180,7 +180,7 @@ class PrefetchUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes{
     to_rsp_unit(i).bits   := rsp_with_data
   }
 
-  /* Dealloc */
+  /* Free Entry */
   val will_free_vec = buffer.zipWithIndex.map{
     case (e, i) =>
       e.valid && e.state.w_datRsp && e.state.w_queryReq && txdatArb.io.in(i).fire
@@ -199,7 +199,7 @@ class PrefetchUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes{
     when (RegNext(e.valid && e.state.w_datRsp && !e.state.w_queryReq, false.B) && !(e.valid && e.state.w_datRsp && !e.state.w_queryReq)){
       t := 0.U
     }
-    when (t > timeoutThreshold.U){
+    when (t > timeoutThreshold.U && !(hit_id_s3 === i.U && hit_s3)){
       e.valid := false.B
     }
     XSPerfAccumulate(s"noTask$i", t > timeoutThreshold.U)
