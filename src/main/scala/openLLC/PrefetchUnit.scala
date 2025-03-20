@@ -199,7 +199,10 @@ class PrefetchUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes{
     when (RegNext(e.valid && e.state.w_datRsp && !e.state.w_queryReq, false.B) && !(e.valid && e.state.w_datRsp && !e.state.w_queryReq)){
       t := 0.U
     }
-    when (t > timeoutThreshold.U && !(hit_id_s3 === i.U && hit_s3)){
+
+    val s2_queried =  hit_id_s2 === i.U && hit_s2 && (query_req.bits.task.chiOpcode === ReadNotSharedDirty || query_req.bits.task.chiOpcode === ReadUnique)
+    val s3_queried =  hit_id_s3 === i.U && hit_s3 && (query_req_s3.bits.task.chiOpcode === ReadNotSharedDirty || query_req_s3.bits.task.chiOpcode === ReadUnique)
+    when (t > timeoutThreshold.U && !(s2_queried || s3_queried)){
       e.valid := false.B
     }
     XSPerfAccumulate(s"noTask$i", t > timeoutThreshold.U)
