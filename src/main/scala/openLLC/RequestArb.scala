@@ -21,6 +21,8 @@ import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import coupledL2.tl2chi.HasCHIOpcodes
+import utility.XSPerfAccumulate
+
 import scala.math.min
 
 class RequestArb(implicit p: Parameters) extends LLCModule with HasClientInfo with HasCHIOpcodes {
@@ -119,13 +121,20 @@ class RequestArb(implicit p: Parameters) extends LLCModule with HasClientInfo wi
     Cat(memInfo.map(e => e.valid && e.bits.reqID === reqID_s1 && !task_s1.bits.refillTask)).orR ||
     (inflight_memAccess +& potential_memAccess) >= mshrs.memory.U
 
+  dontTouch(blockByMainPipe)
+  dontTouch(blockByRefill)
+  dontTouch(blockByResp)
+  dontTouch(blockByMem)
   val blockEntrance = blockByMainPipe || blockByRefill || blockByResp || blockByMem
 
   task_s1.valid := io.dirRead_s1.ready && (io.busTask_s1.valid || io.refillTask_s1.valid) && !blockEntrance
   task_s1.bits := Mux(io.refillTask_s1.valid, io.refillTask_s1.bits, io.busTask_s1.bits)
 
-  io.busTask_s1.ready := io.dirRead_s1.ready && !io.refillTask_s1.valid && !blockEntrance
-  io.refillTask_s1.ready := io.dirRead_s1.ready && !blockEntrance
+  io.busTask_s1.ready := io.dirRead_s1.ready && !io.refillTask_s1.valid && (!blockEntrance || isPrefetchTgt)
+  io.refillTask_s1.ready := io.dirRead_s1.ready && (!blockEntrance || isPrefetchTgt)
+  val dropPrefetchTgtReq = !task_s1.valid && isPrefetchTgt && (io.busTask_s1.ready || io.refillTask_s1.ready)
+  dontTouch(dropPrefetchTgtReq)
+  XSPerfAccumulate("dropPrefetchTgtReq", !task_s1.valid && isPrefetchTgt && (io.busTask_s1.ready || io.refillTask_s1.ready))
 
   def addrConnect(lset: UInt, ltag: UInt, rset: UInt, rtag: UInt) = {
     assert(lset.getWidth + ltag.getWidth == rset.getWidth + rtag.getWidth)
