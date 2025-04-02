@@ -46,6 +46,7 @@ class RequestArb(implicit p: Parameters) extends LLCModule with HasClientInfo wi
     val respInfo = Flipped(Vec(mshrs.response, ValidIO(new ResponseInfo())))
     val snpInfo = Flipped(Vec(mshrs.snoop, ValidIO(new BlockInfo())))
     val memInfo = Flipped(Vec(mshrs.memory, ValidIO(new MemInfo())))
+    val pftInfo = Flipped(Vec(mshrs.prefetch, ValidIO(new PrefetchInfo())))
   })
 
   val pipeInfo   = io.pipeInfo
@@ -53,6 +54,7 @@ class RequestArb(implicit p: Parameters) extends LLCModule with HasClientInfo wi
   val respInfo   = io.respInfo
   val snpInfo    = io.snpInfo
   val memInfo    = io.memInfo
+  val pftInfo    = io.pftInfo
 
   val task_s1 = Wire(Valid(new Task()))
   val task_s2 = Wire(Valid(new Task()))
@@ -121,11 +123,21 @@ class RequestArb(implicit p: Parameters) extends LLCModule with HasClientInfo wi
     Cat(memInfo.map(e => e.valid && e.bits.reqID === reqID_s1 && !task_s1.bits.refillTask)).orR ||
     (inflight_memAccess +& potential_memAccess) >= mshrs.memory.U
 
+  val blockByPft = Cat(pftInfo.map(e => e.valid && Cat(e.bits.tag, e.bits.set) === Cat(tag_s1, set_s1) && isPrefetchTgt)).orR ||
+    Cat(pftInfo.map(e => e.valid && e.bits.reqID === reqID_s1 && !task_s1.bits.refillTask)).orR
+
   dontTouch(blockByMainPipe)
   dontTouch(blockByRefill)
   dontTouch(blockByResp)
   dontTouch(blockByMem)
-  val blockEntrance = blockByMainPipe || blockByRefill || blockByResp || blockByMem
+  dontTouch(blockByPft)
+  val blockEntrance = blockByMainPipe || blockByRefill || blockByResp || blockByMem || blockByPft
+  XSPerfAccumulate("blcokByMainPipeCycles", !io.busTask_s1.ready && io.dirRead_s1.ready && io.busTask_s1.valid && blockByMainPipe && !isPrefetchTgt)
+  XSPerfAccumulate("blcokByRefillCycles", !io.busTask_s1.ready && io.dirRead_s1.ready && io.busTask_s1.valid && blockByRefill && !isPrefetchTgt)
+  XSPerfAccumulate("blcokByRespCycles", !io.busTask_s1.ready && io.dirRead_s1.ready && io.busTask_s1.valid && blockByResp && !isPrefetchTgt)
+  XSPerfAccumulate("blcokByMemCycles", !io.busTask_s1.ready && io.dirRead_s1.ready && io.busTask_s1.valid && blockByMem && !isPrefetchTgt)
+  XSPerfAccumulate("blcokByPftCycles", !io.busTask_s1.ready && io.dirRead_s1.ready && io.busTask_s1.valid && blockByPft && !isPrefetchTgt)
+
 
   task_s1.valid := io.dirRead_s1.ready && (io.busTask_s1.valid || io.refillTask_s1.valid) && !blockEntrance
   task_s1.bits := Mux(io.refillTask_s1.valid, io.refillTask_s1.bits, io.busTask_s1.bits)

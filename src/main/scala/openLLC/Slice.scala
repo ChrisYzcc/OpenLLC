@@ -98,6 +98,7 @@ class Slice()(implicit p: Parameters) extends LLCModule {
   reqArb.io.respInfo <> responseUnit.io.respInfo
   reqArb.io.snpInfo <> snpUnit.io.snpInfo
   reqArb.io.memInfo <> memUnit.io.memInfo
+  reqArb.io.pftInfo <> prefetchUnit.io.prefetchInfo
 
   mainPipe.io.taskFromArb_s2 <> reqArb.io.taskToPipe_s2
   mainPipe.io.dirResp_s3 <> directory.io.resp.bits

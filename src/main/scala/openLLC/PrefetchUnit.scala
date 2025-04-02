@@ -60,7 +60,7 @@ class PrefetchUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes{
     val toRespUnit = Vec(beatSize, ValidIO(new RespWithData()))
 
     /* Prefetch buffers info */
-    //val prefetchInfo = Vec(mshrs.prefetch, ValidIO(new PrefetchInfo()))
+    val prefetchInfo = Vec(mshrs.prefetch, ValidIO(new PrefetchInfo()))
   })
 
   val alloc_s4    = io.fromMainPipe.alloc_s4
@@ -189,6 +189,15 @@ class PrefetchUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes{
     when(will_free_vec(i)) {
       buffer(i).valid := false.B
     }
+  }
+
+  /* Block Info */
+  io.prefetchInfo.zipWithIndex.foreach { case (m, i) =>
+    m.valid := buffer(i).valid
+    m.bits.tag := buffer(i).task.tag
+    m.bits.set := buffer(i).task.set
+    m.bits.opcode := buffer(i).task.chiOpcode
+    m.bits.reqID := buffer(i).task.reqID
   }
 
   val waitTaskTimer = RegInit(VecInit(Seq.fill(mshrs.prefetch)(0.U(16.W))))
