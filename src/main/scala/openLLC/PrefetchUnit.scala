@@ -35,7 +35,7 @@ class PrefetchQueryResult(implicit p: Parameters) extends LLCBundle{
 }
 
 class PrefetchInfo(implicit p: Parameters) extends BlockInfo{
-
+  val state = new PrefetchState()
 }
 
 class PrefetchUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes{
@@ -198,6 +198,7 @@ class PrefetchUnit(implicit p: Parameters) extends LLCModule with HasCHIOpcodes{
     m.bits.set := buffer(i).task.set
     m.bits.opcode := buffer(i).task.chiOpcode
     m.bits.reqID := buffer(i).task.reqID
+    m.bits.state  := buffer(i).state
   }
 
   val waitTaskTimer = RegInit(VecInit(Seq.fill(mshrs.prefetch)(0.U(16.W))))

@@ -124,7 +124,7 @@ class RequestArb(implicit p: Parameters) extends LLCModule with HasClientInfo wi
     (inflight_memAccess +& potential_memAccess) >= mshrs.memory.U
 
   val blockByPft = Cat(pftInfo.map(e => e.valid && Cat(e.bits.tag, e.bits.set) === Cat(tag_s1, set_s1) && isPrefetchTgt)).orR ||
-    Cat(pftInfo.map(e => e.valid && e.bits.reqID === reqID_s1 && !task_s1.bits.refillTask)).orR
+    Cat(pftInfo.map(e => e.valid && e.bits.reqID === reqID_s1 && !e.bits.state.w_datRsp && !task_s1.bits.refillTask)).orR
 
   dontTouch(blockByMainPipe)
   dontTouch(blockByRefill)
